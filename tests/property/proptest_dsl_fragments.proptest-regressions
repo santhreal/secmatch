@@ -1,0 +1,13 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 8afa3d7230370aa89c596e2a92b7069dc6bed6f52801430e36fd7752c76d793a # shrinks to a = 0, b = -1, op = 0
+cc 45dd2defc3a228ffdacbba368317034b182664bd7dd4f153914b3734d5077925 # shrinks to a = "a == 0", b = "a == -593757", c = "Rn == -8683903774471469066"
+cc b4ac6801d49cd43f1d25f6f6a975f762da89f248cb7c756b8833d9b167a5349b # shrinks to ident = "A"
+cc f806162c655cda46423505cedba18ba96244e59f457abd1fc95410369f1b4f65 # shrinks to n = -3
+cc c8dc22836d5e563219d660546304248815134e5ad18eac52f38b7644ea59abc9 # shrinks to fragment = "A == -1"
+cc 6019e00e8dc08ccfe55b09e43a5684fe48d89e5e137b34b3d00ff81375edd3ab # shrinks to expr = "(_ == -1) && (a == 102303594)"
+cc ffe2c92b7e171744892d1006da322a1f2efde4ca19527c9d153a189add09d6a1 # shrinks to bad = "\""
