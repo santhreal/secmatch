@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.1] - 2026-08-07
+
+### Fixed
+- Named binary matcher silent byte drop: `compile_impl` dropped hex-decoded bytes for `MatcherKind::Binary` with `MatchPart::Named`, substring-searching the hex ASCII text in header values instead of matching binary bytes; fixed by storing `named_binary_matchers` and matching raw bytes.
+- Refactored `compile_impl` duplicated named-vs-unnamed match dispatch across 5 matcher kinds into ONE-PLACE helpers (`push_word_or_binary` and `push_regex_entry`).
+- Surface Aho-Corasick builder fallback loudly at `tracing::warn!` instead of silent `tracing::debug!` when falling back from primary NFA to ContiguousNFA.
+
+### Changed
+- Authors metadata set to `Santh <64453045+santhreal@users.noreply.github.com>`.
+- Honest `package.metadata.santh.status = "beta"` (no fuzz directory yet).
+- `secir` dependency requirement raised to `0.3.2`.
+
 ## [0.2.0] - 2026-07-31
 
 ### Fixed

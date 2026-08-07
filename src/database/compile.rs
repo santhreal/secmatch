@@ -1,4 +1,4 @@
-use super::{CompiledDatabase, NegativeMatcher, PatternRef, RegexEntry, StoredMatcher};
+use super::{BinaryEntry, CompiledDatabase, NegativeMatcher, PatternRef, RegexEntry, StoredMatcher};
 use aho_corasick::{AhoCorasick, AhoCorasickKind};
 use rayon::prelude::*;
 // Byte-oriented RegexSet so scan patterns match raw response bytes (see the
@@ -15,11 +15,45 @@ struct TemplatePatternBatch {
     word_patterns_raw: Vec<Vec<u8>>,
     word_patterns: Vec<PatternRef>,
     named_word_patterns: FxHashMap<String, Vec<PatternRef>>,
+    named_binary_matchers: FxHashMap<String, Vec<BinaryEntry>>,
     regex_matchers: Vec<RegexEntry>,
     named_regex_matchers: FxHashMap<String, Vec<RegexEntry>>,
     status_patterns: Vec<(u16, PatternRef)>,
     size_patterns: Vec<(usize, PatternRef)>,
     dsl_matchers: Vec<StoredMatcher>,
+}
+
+impl TemplatePatternBatch {
+    fn push_word_or_binary(&mut self, pattern_ref: PatternRef, bytes: Vec<u8>) {
+        if let MatchPart::Named(name) = &pattern_ref.part {
+            let key = name.to_ascii_lowercase();
+            if pattern_ref.kind == MatcherKind::Binary {
+                self.named_binary_matchers
+                    .entry(key)
+                    .or_default()
+                    .push(BinaryEntry { bytes, pattern_ref });
+            } else {
+                self.named_word_patterns
+                    .entry(key)
+                    .or_default()
+                    .push(pattern_ref);
+            }
+        } else {
+            self.word_patterns_raw.push(bytes);
+            self.word_patterns.push(pattern_ref);
+        }
+    }
+
+    fn push_regex_entry(&mut self, entry: RegexEntry) {
+        if let MatchPart::Named(name) = &entry.pattern_ref.part {
+            self.named_regex_matchers
+                .entry(name.to_ascii_lowercase())
+                .or_default()
+                .push(entry);
+        } else {
+            self.regex_matchers.push(entry);
+        }
+    }
 }
 
 /// Turn `hello-{{suffix}}` into a Rust regex by substituting template holes.
@@ -142,7 +176,7 @@ impl CompiledDatabase {
         match primary() {
             Ok(automaton) => Ok(automaton),
             Err(error) => {
-                tracing::debug!(error = %error, "falling back to alternate aho-corasick builder");
+                tracing::warn!(error = %error, "falling back to alternate aho-corasick builder; primary builder failed");
                 fallback().map_err(|fallback_error| Error::PatternCompile {
                     pattern: "<aho-corasick automaton>".to_string(),
                     source: format!(
@@ -275,16 +309,7 @@ impl CompiledDatabase {
 
                             match matcher.kind {
                                 MatcherKind::Word => {
-                                    if let MatchPart::Named(name) = &matcher.part {
-                                        batch
-                                            .named_word_patterns
-                                            .entry(name.to_ascii_lowercase())
-                                            .or_default()
-                                            .push(pattern_ref);
-                                    } else {
-                                        batch.word_patterns_raw.push(value.as_bytes().to_vec());
-                                        batch.word_patterns.push(pattern_ref);
-                                    }
+                                    batch.push_word_or_binary(pattern_ref, value.as_bytes().to_vec());
                                 }
                                 MatcherKind::Regex if value.contains("{{") => {
                                     let runtime = template_var_regex_pattern(value);
@@ -300,21 +325,10 @@ impl CompiledDatabase {
                                                 runtime = %runtime,
                                                 "compiled runtime regex with template-variable holes"
                                             );
-                                            if let MatchPart::Named(name) = &matcher.part {
-                                                batch
-                                                    .named_regex_matchers
-                                                    .entry(name.to_ascii_lowercase())
-                                                    .or_default()
-                                                    .push(RegexEntry {
-                                                        regex,
-                                                        pattern_ref: runtime_ref,
-                                                    });
-                                            } else {
-                                                batch.regex_matchers.push(RegexEntry {
-                                                    regex,
-                                                    pattern_ref: runtime_ref,
-                                                });
-                                            }
+                                            batch.push_regex_entry(RegexEntry {
+                                                regex,
+                                                pattern_ref: runtime_ref,
+                                            });
                                         }
                                         Err(err) => {
                                             return Err(Error::PatternCompile {
@@ -331,15 +345,7 @@ impl CompiledDatabase {
                                 }
                                 MatcherKind::Regex => match regex::bytes::Regex::new(value) {
                                     Ok(regex) => {
-                                        if let MatchPart::Named(name) = &matcher.part {
-                                            batch
-                                                .named_regex_matchers
-                                                .entry(name.to_ascii_lowercase())
-                                                .or_default()
-                                                .push(RegexEntry { regex, pattern_ref });
-                                        } else {
-                                            batch.regex_matchers.push(RegexEntry { regex, pattern_ref });
-                                        }
+                                            batch.push_regex_entry(RegexEntry { regex, pattern_ref });
                                     }
                                     Err(err) => {
                                         let mut fixed = false;
@@ -359,21 +365,10 @@ impl CompiledDatabase {
                                                 Self::intern_pattern(&mut batch, &fixed_value, &template.id)?;
                                             let mut fixed_pattern_ref = pattern_ref.clone();
                                             fixed_pattern_ref.pattern_index = pattern_index;
-                                            if let MatchPart::Named(name) = &matcher.part {
-                                                batch
-                                                    .named_regex_matchers
-                                                    .entry(name.to_ascii_lowercase())
-                                                    .or_default()
-                                                    .push(RegexEntry {
-                                                        regex: fixed_regex,
-                                                        pattern_ref: fixed_pattern_ref,
-                                                    });
-                                            } else {
-                                                batch.regex_matchers.push(RegexEntry {
-                                                    regex: fixed_regex,
-                                                    pattern_ref: fixed_pattern_ref,
-                                                });
-                                            }
+                                            batch.push_regex_entry(RegexEntry {
+                                                regex: fixed_regex,
+                                                pattern_ref: fixed_pattern_ref,
+                                            });
                                             fixed = true;
                                         }
 
@@ -422,16 +417,7 @@ impl CompiledDatabase {
                                 },
                                 MatcherKind::Binary => match hex_decode(value) {
                                     Ok(bytes) => {
-                                        if let MatchPart::Named(name) = &matcher.part {
-                                            batch
-                                                .named_word_patterns
-                                                .entry(name.to_ascii_lowercase())
-                                                .or_default()
-                                                .push(pattern_ref);
-                                        } else {
-                                            batch.word_patterns_raw.push(bytes);
-                                            batch.word_patterns.push(pattern_ref);
-                                        }
+                                        batch.push_word_or_binary(pattern_ref, bytes);
                                     }
                                     Err(()) => {
                                         return Err(Error::PatternCompile {
@@ -460,6 +446,7 @@ impl CompiledDatabase {
         let mut word_patterns_raw: Vec<Vec<u8>> = Vec::new();
         let mut word_patterns = Vec::new();
         let mut named_word_patterns: FxHashMap<String, Vec<PatternRef>> = FxHashMap::default();
+        let mut named_binary_matchers: FxHashMap<String, Vec<BinaryEntry>> = FxHashMap::default();
         let mut regex_matchers = Vec::new();
         let mut named_regex_matchers: FxHashMap<String, Vec<RegexEntry>> = FxHashMap::default();
         let mut status_index: FxHashMap<u16, Vec<PatternRef>> = FxHashMap::default();
@@ -480,6 +467,11 @@ impl CompiledDatabase {
             for refs in batch.named_word_patterns.values_mut() {
                 for pattern_ref in refs {
                     pattern_ref.pattern_index += pattern_offset;
+                }
+            }
+            for entries in batch.named_binary_matchers.values_mut() {
+                for entry in entries {
+                    entry.pattern_ref.pattern_index += pattern_offset;
                 }
             }
             for entry in &mut batch.regex_matchers {
@@ -504,6 +496,12 @@ impl CompiledDatabase {
                     .entry(name)
                     .or_default()
                     .append(&mut refs);
+            }
+            for (name, mut entries) in batch.named_binary_matchers {
+                named_binary_matchers
+                    .entry(name)
+                    .or_default()
+                    .append(&mut entries);
             }
             for (name, mut entries) in batch.named_regex_matchers {
                 named_regex_matchers
@@ -670,6 +668,11 @@ impl CompiledDatabase {
                 collect_negative(pattern_ref, &patterns, &mut negative_matchers);
             }
         }
+        for entries in named_binary_matchers.values() {
+            for entry in entries {
+                collect_negative(&entry.pattern_ref, &patterns, &mut negative_matchers);
+            }
+        }
         for entry in &regex_matchers {
             collect_negative(&entry.pattern_ref, &patterns, &mut negative_matchers);
         }
@@ -726,6 +729,7 @@ impl CompiledDatabase {
             patterns,
             word_groups,
             named_word_patterns,
+            named_binary_matchers,
             regex_matchers,
             named_regex_matchers,
             regex_sets_body,

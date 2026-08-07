@@ -26,6 +26,7 @@ pub struct CompiledDatabase {
     /// would be silent false negatives.
     word_groups: Vec<Vec<PatternRef>>,
     named_word_patterns: FxHashMap<String, Vec<PatternRef>>,
+    named_binary_matchers: FxHashMap<String, Vec<BinaryEntry>>,
     regex_matchers: Vec<RegexEntry>,
     named_regex_matchers: FxHashMap<String, Vec<RegexEntry>>,
     regex_sets_body: Vec<(RegexSet, Vec<usize>)>,
@@ -84,6 +85,12 @@ impl PatternRef {
 
 struct RegexEntry {
     regex: Regex,
+    pattern_ref: PatternRef,
+}
+
+#[derive(Clone)]
+struct BinaryEntry {
+    bytes: Vec<u8>,
     pattern_ref: PatternRef,
 }
 

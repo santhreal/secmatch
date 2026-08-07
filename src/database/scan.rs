@@ -92,6 +92,20 @@ impl MatchDatabase for CompiledDatabase {
                     }
                 }
             }
+            if let Some(entries) = self.named_binary_matchers.get(header_name) {
+                for entry in entries {
+                    if contains_bytes(header_value.as_bytes(), &entry.bytes) {
+                        self.record_hit(
+                            &entry.pattern_ref,
+                            0,
+                            || self.pattern(&entry.pattern_ref).to_string(),
+                            &mut matches,
+                            &mut seen,
+                            &mut fired,
+                        );
+                    }
+                }
+            }
 
             if let Some(entries) = self.named_regex_matchers.get(header_name) {
                 for entry in entries {
@@ -231,6 +245,11 @@ impl MatchDatabase for CompiledDatabase {
                 .values()
                 .map(Vec::len)
                 .sum::<usize>()
+            + self
+                .named_binary_matchers
+                .values()
+                .map(Vec::len)
+                .sum::<usize>()
             + self.regex_matchers.len()
             + self
                 .named_regex_matchers
@@ -249,4 +268,12 @@ impl MatchDatabase for CompiledDatabase {
     fn template_count(&self) -> usize {
         self.template_count
     }
+}
+
+#[inline]
+fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
+    if needle.is_empty() {
+        return true;
+    }
+    haystack.windows(needle.len()).any(|w| w == needle)
 }

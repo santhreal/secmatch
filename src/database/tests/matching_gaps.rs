@@ -8,7 +8,7 @@
 use crate::database::CompiledDatabase;
 use crate::dsl::{evaluate_dsl, evaluate_dsl_with_variables};
 use secir::Severity;
-use secir::matcher::ResponseData;
+use secir::matcher::{MatchDatabase, ResponseData};
 use secir::template::{
     MatchPart, MatcherCondition, MatcherDef, MatcherKind, Template, TemplateInfo, TemplateMeta,
 };
@@ -189,4 +189,63 @@ fn dsl_supports_multiple_previous_status_references() {
             expr
         );
     }
+}
+
+#[test]
+fn named_binary_matcher_matches_decoded_bytes_not_hex_text() {
+    let matcher = MatcherDef {
+        kind: MatcherKind::Binary,
+        values: vec!["4141".to_string()], // Hex for b"AA"
+        part: MatchPart::Named("server".to_string()),
+        negative: false,
+        condition: MatcherCondition::Or,
+        internal: false,
+    };
+    let template = make_template_with_matchers("named_binary_test", vec![matcher]);
+    let db = CompiledDatabase::compile(&[template]).expect("compilation should succeed");
+
+    // Case 1: Header "server" contains binary bytes b"AA" ("xAAx") -> MUST MATCH
+    let resp_bytes = ResponseData::new(200, vec![("server".to_string(), "xAAx".to_string())], b"".to_vec());
+    let matches_bytes = db.scan(&resp_bytes).expect("scan should succeed");
+    assert_eq!(
+        matches_bytes.len(),
+        1,
+        "named binary matcher with hex 4141 must match header value 'xAAx' containing raw bytes 0x41 0x41"
+    );
+
+    // Case 2: Header "server" contains literal hex string "x4141x" (b"x4141x") -> MUST NOT MATCH
+    let resp_hex = ResponseData::new(200, vec![("server".to_string(), "x4141x".to_string())], b"".to_vec());
+    let matches_hex = db.scan(&resp_hex).expect("scan should succeed");
+    assert_eq!(
+        matches_hex.len(),
+        0,
+        "named binary matcher with hex 4141 must NOT match header value 'x4141x' containing literal hex text"
+    );
+}
+
+#[test]
+fn build_word_automaton_with_fallback_invoked_and_handles_errors() {
+    let primary_called = std::cell::Cell::new(false);
+    let fallback_called = std::cell::Cell::new(false);
+
+    let res = CompiledDatabase::build_word_automaton_with(
+        || {
+            primary_called.set(true);
+            Err("primary builder error")
+        },
+        || {
+            fallback_called.set(true);
+            aho_corasick::AhoCorasick::builder().build(&["test"])
+        },
+    );
+
+    assert!(res.is_ok());
+    assert!(primary_called.get());
+    assert!(fallback_called.get());
+
+    let both_failed = CompiledDatabase::build_word_automaton_with(
+        || Err("primary failed"),
+        || Err("fallback failed"),
+    );
+    assert!(both_failed.is_err());
 }

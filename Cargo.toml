@@ -1,17 +1,20 @@
 [package]
 name = "secmatch"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 rust-version = "1.85"
-authors = ["Santh Project <contact@santh.dev>"]
+authors = ["Santh <64453045+santhreal@users.noreply.github.com>"]
 license = "MIT OR Apache-2.0"
 homepage = "https://santh.dev"
 description = "Pattern matching engine  -  Aho-Corasick + RegexSet fusion, DSL evaluator, extractors"
 repository = "https://github.com/santhreal/secmatch"
 keywords = ["security", "pattern-matching"]
 
+[package.metadata.santh]
+status = "beta"
+
 [dependencies]
-secir = { version = "0.3.1" }
+secir = { version = "0.3.2" }
 aho-corasick = "=1.1.4"
 regex = "=1.12.3"
 rustc-hash = "=2.1.2"
