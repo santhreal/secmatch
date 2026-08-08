@@ -181,7 +181,18 @@ pub fn transform_response_checked(
                     }),
                 }
             }
-            _ => {}
+            ref unhandled => {
+                tracing::warn!(
+                    index,
+                    transform = ?unhandled,
+                    "unhandled Transform variant; skipping transform"
+                );
+                failures.push(TransformFailure {
+                    index,
+                    kind: "unhandled_transform",
+                    reason: format!("unhandled Transform variant {unhandled:?}"),
+                });
+            }
         }
     }
     (data, failures)

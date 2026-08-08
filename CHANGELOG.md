@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2] - 2026-08-07
+### Fixed
+- Enforced fail-closed `MatchPart` handling in non-HTTP text matching (`matcher_values_text`), returning no matches for `MatchPart::Header` and `MatchPart::Named` on raw text payloads.
+- Added `MatcherKind::Binary` support to non-HTTP text matching (`matcher_values_text`), decoding hex patterns and matching against raw payload bytes.
+- Enforced `MatchPart` fail-closed check for `ExtractorKind::Kval` extractors, skipping `MatchPart::Body` to prevent silent header-lookup fallback.
+- Added `tracing::warn!` logging for unhandled `MatchPart`, `MatcherKind`, `ExtractorKind`, and `Transform` non-exhaustive enum variants across compilation, extraction, and evaluation.
+
 ## [0.2.1] - 2026-08-07
 
 ### Fixed

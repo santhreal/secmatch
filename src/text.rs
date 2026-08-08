@@ -4,7 +4,7 @@
 //! matcher evaluation against text/byte responses. This module eliminates the
 //! duplication by providing generic matching functions that operate on `&str`.
 
-use secir::template::{MatcherCondition, MatcherDef, MatcherKind, RequestDef};
+use secir::template::{MatchPart, MatcherCondition, MatcherDef, MatcherKind, RequestDef};
 use std::collections::HashSet;
 
 /// Check whether all matchers on a request are satisfied against the given text.
@@ -68,6 +68,19 @@ pub fn matcher_satisfied_text(matcher: &MatcherDef, text: &str) -> bool {
 /// Return all values from a matcher that match against the given text.
 #[must_use]
 pub fn matcher_values_text(matcher: &MatcherDef, text: &str) -> Vec<String> {
+    match matcher.part {
+        MatchPart::Body | MatchPart::All => {}
+        MatchPart::Header | MatchPart::Named(_) => {
+            // Raw text matching (non-HTTP protocol scanners) operates on body payload text.
+            // Matchers targeting header or named header parts cannot match raw text without
+            // structured header data; fail closed to avoid matching header patterns against body text.
+            return Vec::new();
+        }
+        _ => {
+            // Fail closed on unhandled non-exhaustive MatchPart variants.
+            return Vec::new();
+        }
+    }
     match matcher.kind {
         MatcherKind::Word => {
             let bytes = text.as_bytes();
@@ -117,6 +130,25 @@ pub fn matcher_values_text(matcher: &MatcherDef, text: &str) -> Vec<String> {
                 .values
                 .iter()
                 .filter(|v| v.parse::<usize>().ok() == Some(size))
+                .cloned()
+                .collect()
+        }
+        MatcherKind::Binary => {
+            let bytes = text.as_bytes();
+            matcher
+                .values
+                .iter()
+                .filter(|v| {
+                    let cleaned = v.trim().replace(' ', "");
+                    if let Ok(needle) = hex::decode(cleaned) {
+                        if needle.is_empty() || needle.len() > bytes.len() {
+                            return false;
+                        }
+                        bytes.windows(needle.len()).any(|w| w == needle)
+                    } else {
+                        false
+                    }
+                })
                 .cloned()
                 .collect()
         }
@@ -284,5 +316,47 @@ mod tests {
             0,
             "internal-only matchers should not collect matched values"
         );
+    }
+
+    #[test]
+    fn match_part_header_or_named_fails_closed_on_raw_text() {
+        let header_matcher = MatcherDef {
+            kind: MatcherKind::Word,
+            values: vec!["nginx".to_string()],
+            part: MatchPart::Header,
+            negative: false,
+            condition: MatcherCondition::Or,
+            internal: false,
+        };
+        let named_matcher = MatcherDef {
+            kind: MatcherKind::Word,
+            values: vec!["nginx".to_string()],
+            part: MatchPart::Named("server".to_string()),
+            negative: false,
+            condition: MatcherCondition::Or,
+            internal: false,
+        };
+        assert!(matcher_values_text(&header_matcher, "Server: nginx").is_empty());
+        assert!(matcher_values_text(&named_matcher, "Server: nginx").is_empty());
+        assert!(!matcher_satisfied_text(&header_matcher, "Server: nginx"));
+        assert!(!matcher_satisfied_text(&named_matcher, "Server: nginx"));
+    }
+
+    #[test]
+    fn binary_matcher_matches_hex_values_on_raw_text() {
+        let binary_matcher = MatcherDef {
+            kind: MatcherKind::Binary,
+            values: vec!["504f5354".to_string()], // "POST" in hex
+            part: MatchPart::Body,
+            negative: false,
+            condition: MatcherCondition::Or,
+            internal: false,
+        };
+        assert_eq!(
+            matcher_values_text(&binary_matcher, "POST /api/v1 HTTP/1.1"),
+            vec!["504f5354".to_string()]
+        );
+        assert!(matcher_satisfied_text(&binary_matcher, "POST /api/v1 HTTP/1.1"));
+        assert!(!matcher_satisfied_text(&binary_matcher, "GET /api/v1 HTTP/1.1"));
     }
 }

@@ -4,7 +4,7 @@
 //! requests (variable chaining) or for inclusion in scan findings.
 
 use secir::matcher::{ResponseData, select_response_part};
-use secir::template::{ExtractorDef, ExtractorKind};
+use secir::template::{ExtractorDef, ExtractorKind, MatchPart};
 use crate::json_util::{gjson_value_to_string, normalize_gjson_path};
 use std::collections::HashMap;
 
@@ -73,6 +73,19 @@ fn extract_impl(
                 }
             }
             ExtractorKind::Kval => {
+                match extractor.part {
+                    MatchPart::Header | MatchPart::All | MatchPart::Named(_) => {}
+                    MatchPart::Body => {
+                        tracing::warn!(
+                            extractor = %key,
+                            "Kval extractor specified MatchPart::Body; key-value header extraction requires header part, skipping"
+                        );
+                        continue;
+                    }
+                    _ => {
+                        continue;
+                    }
+                }
                 for pattern in &extractor.patterns {
                     let Some(value) = response
                         .header_map
@@ -122,7 +135,13 @@ fn extract_impl(
                     break;
                 }
             }
-            _ => {}
+            ref unhandled => {
+                tracing::warn!(
+                    extractor = %key,
+                    kind = ?unhandled,
+                    "unhandled ExtractorKind variant"
+                );
+            }
         }
     }
 
@@ -184,6 +203,23 @@ mod tests {
         );
 
         assert_eq!(extracted.get("server"), Some(&"nginx/1.25.3".to_string()));
+    }
+
+    #[test]
+    fn kval_extractor_with_body_part_fails_closed() {
+        let extracted = extract_from_response(
+            &sample_response(),
+            &[ExtractorDef {
+                kind: ExtractorKind::Kval,
+                patterns: vec!["Server".to_string()],
+                name: Some("server".to_string()),
+                part: MatchPart::Body,
+                group: 0,
+                internal: false,
+            }],
+        );
+
+        assert!(extracted.is_empty(), "Kval extractor with MatchPart::Body must fail closed");
     }
 
     #[test]

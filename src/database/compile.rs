@@ -432,7 +432,13 @@ impl CompiledDatabase {
                                         });
                                     }
                                 },
-                                _ => {}
+                                ref unhandled => {
+                                    tracing::warn!(
+                                        template_id = %template.id,
+                                        kind = ?unhandled,
+                                        "unhandled MatcherKind variant in pattern compilation"
+                                    );
+                                }
                             }
                         }
                     }
@@ -576,7 +582,12 @@ impl CompiledDatabase {
                         .push(patterns[entry.pattern_ref.pattern_index as usize].as_str());
                     regex_all_indices.push(index);
                 }
-                _ => {}
+                ref unhandled => {
+                    tracing::warn!(
+                        part = ?unhandled,
+                        "unhandled MatcherKind or MatchPart variant in regex set compilation"
+                    );
+                }
             }
         }
 
