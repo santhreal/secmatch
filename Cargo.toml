@@ -14,7 +14,7 @@ keywords = ["security", "pattern-matching"]
 status = "beta"
 
 [dependencies]
-secir = { version = "0.3.2" }
+secir = { path = "../secir", version = "0.3.2" }
 aho-corasick = "=1.1.4"
 regex = "=1.12.3"
 rustc-hash = "=2.1.2"
@@ -24,15 +24,15 @@ tracing = "=0.1.44"
 chrono = { version = "=0.4.44", features = ["serde"] }
 smallvec = "=1.15.1"
 hex = "=0.4.3"
-encodex = { version = "0.1.13" }
+encodex = { package = "santh-encodex", version = "0.1.13", path = "../../performance/compression/encodex" }
 urlencoding = "=2.1.3"
 flate2 = "=1.1.9"
-hashkit = { version = "0.1.3" }
+hashkit = { path = "../../performance/indexing/hashkit", version = "0.1.3" }
 md5 = "=0.8.0"
 sha1 = "=0.11.0"
 clap = { version = "=4.6.1", features = ["derive"] }
 rand = "0.8"
-guise-choice = { version = "0.1.1" }
+guise-choice = { path = "../../runtime/guise-choice", version = "0.1.1" }
 rayon = "1.10"
 serde_yaml = "=0.9.34"
 toml = "=0.8.23"
@@ -42,7 +42,7 @@ base64 = "=0.21.7"
 [dev-dependencies]
 tracing-subscriber = { version = "=0.3.23", features = ["env-filter"] }
 tempfile = "=3.27.0"
-sigma = { version = "0.1.1" }
+sigma = { package = "santh-sigma", path = "../sigma", version = "0.1.1" }
 criterion = "=0.5.1"
 proptest = "=1.9.0"
 # calyx-compiler = { path = "../../../web/calyx/crates/compiler" }
